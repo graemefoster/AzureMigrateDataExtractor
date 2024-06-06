@@ -1,5 +1,4 @@
-﻿using System;
-using CsvHelper.Configuration.Attributes;
+﻿using CsvHelper.Configuration.Attributes;
 
 namespace AzureMigrateDataExtractor;
 
@@ -22,5 +21,21 @@ internal class Dependency
         return HashCode.Combine(
             $"{SourceServerName}{SourceIp}{SourceApplication}{SourceProcess}",
             $"{DestinationServerName}{DestinationIp}{DestinationApplication}{DestinationProcess}{DestinationPort}");
+    }
+
+    public DependencyOverTime ToDependencyOverTime()
+    {
+        return new DependencyOverTime()
+        {
+            SourceServerName = SourceServerName,
+            SourceIp = SourceIp,
+            SourceApplication = SourceApplication,
+            SourceProcess = SourceProcess,
+            DestinationServerName = DestinationServerName,
+            DestinationIp = DestinationIp,
+            DestinationApplication = DestinationApplication,
+            DestinationProcess = DestinationProcess,
+            DestinationPort = DestinationPort
+        };
     }
 }

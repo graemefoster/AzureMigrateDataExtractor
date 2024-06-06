@@ -1,12 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
-using System.Linq;
-using System.Net.Http;
+﻿using System.Globalization;
 using System.Net.Http.Headers;
-using System.Threading;
-using System.Threading.Tasks;
 using Azure.Core;
 using Azure.Identity;
 using CsvHelper;
@@ -43,7 +36,8 @@ internal class DataExtractor : IHostedService
         });
 
         _logger.LogInformation("Signing into Azure");
-        var token = await credential.GetTokenAsync(new TokenRequestContext(["https://management.azure.com/user_impersonation"]),
+        var token = await credential.GetTokenAsync(
+            new TokenRequestContext(["https://management.azure.com/user_impersonation"]),
             cancellationToken);
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
 
@@ -65,18 +59,20 @@ internal class DataExtractor : IHostedService
         {
             if (project["properties"]!["summary"]!.Value<int>("discoveredCount") == 0) continue;
 
-            var masterSiteInfo = await _httpClient.GetJsonAsync<JObject>(
-                $"{Root}{project["properties"]!["details"]!["extendedDetails"]!.Value<string>("masterSiteId")}?{ApiVersion}");
-
+            var masterSiteInfo = await FetchMasterSite(project);
             var projectName = project.Value<string>("name")!;
-
             _logger.LogInformation($"Processing Project {projectName}");
-
             await ExtractWebAppsAndSqlDatabases(masterSiteInfo, projectName);
-
             await ExtractMachinesAndDependencies(masterSiteInfo, projectName);
         }
+
         _logger.LogInformation($"Finished extracting data. Output files are in {_options.OutputPath}");
+    }
+
+    private async Task<JObject> FetchMasterSite(JToken project)
+    {
+        return await _httpClient.GetJsonAsync<JObject>(
+            $"{Root}{project["properties"]!["details"]!["extendedDetails"]!.Value<string>("masterSiteId")}?{ApiVersion}");
     }
 
     private async Task ExtractMachinesAndDependencies(JObject masterSiteInfo, string projectName)
@@ -96,7 +92,7 @@ internal class DataExtractor : IHostedService
                         $"{DateTime.Now:yyyy-MM-dd}-{projectName}-machine-dependencies.csv")),
                 CultureInfo.InvariantCulture);
         dependenciesWriter.WriteHeader<DependencyOverTime>();
-       
+
         foreach (var appliance in masterSiteInfo["properties"]!["sites"]!)
         {
             var applianceName = appliance.Value<string>();
@@ -106,7 +102,7 @@ internal class DataExtractor : IHostedService
             {
                 _logger.LogInformation($"Processing Machine {machine["properties"]!.Value<string>("displayName")}");
 
-                var machineObj = BuildMachineObject(machine);
+                var machineObj = Machine.FromJToken(machine);
 
                 var apps = await FetchApplicationsAndFeaturesForMachine(machine);
                 foreach (var app in apps["properties"]!["appsAndRoles"]!["applications"]!)
@@ -120,28 +116,9 @@ internal class DataExtractor : IHostedService
                 }
 
                 await machineSoftwareWriter.WriteRecordsAsync(
-                    machineObj.Applications.Select(x =>
-                        new MachineSoftwareInventory()
-                        {
-                            ApplicationName = x.Name,
-                            ApplicationProvider = x.Provider,
-                            ApplicationVersion = x.Version,
-                            DisplayName = machineObj.DisplayName,
-                            MachineId = machineObj.Name,
-                            PowerStatus = machineObj.PowerStatus,
-                            FeatureName = null
-                        }).Concat(
-                        machineObj.Features.Select(x =>
-                            new MachineSoftwareInventory()
-                            {
-                                ApplicationName = null,
-                                ApplicationProvider = null,
-                                ApplicationVersion = null,
-                                DisplayName = machineObj.DisplayName,
-                                MachineId = machineObj.Name,
-                                PowerStatus = machineObj.PowerStatus,
-                                FeatureName = x
-                            })));
+                    machineObj.Applications
+                        .Select(x => MachineSoftwareInventory.FromMachineAndApplication(machineObj, x))
+                        .Concat(machineObj.Features.Select(x => MachineSoftwareInventory.FromMachineAndFeature(machineObj, x))));
             }
 
             _logger.LogInformation($"Fetching Dependencies");
@@ -165,18 +142,7 @@ internal class DataExtractor : IHostedService
                 {
                     if (record.SourceProcess == "System Idle Process") continue;
 
-                    var dependency = new DependencyOverTime()
-                    {
-                        SourceServerName = record.SourceServerName,
-                        SourceIp = record.SourceIp,
-                        SourceApplication = record.SourceApplication,
-                        SourceProcess = record.SourceProcess,
-                        DestinationServerName = record.DestinationServerName,
-                        DestinationIp = record.DestinationIp,
-                        DestinationApplication = record.DestinationApplication,
-                        DestinationProcess = record.DestinationProcess,
-                        DestinationPort = record.DestinationPort
-                    };
+                    var dependency = record.ToDependencyOverTime();
                     grouped.Add(dependency);
                 }
 
@@ -227,19 +193,6 @@ internal class DataExtractor : IHostedService
             $"{Root}{machine.Value<string>("id")}/applications?{ApiVersion}");
     }
 
-    private static Machine BuildMachineObject(JToken machine)
-    {
-        var machineObj = new Machine()
-        {
-            Id = machine.Value<string>("id")!,
-            Name = machine.Value<string>("name")!,
-            DisplayName = machine["properties"]!.Value<string>("displayName")!,
-            PowerStatus = machine["properties"]!.Value<string>("powerStatus")!,
-            IpAddresses = machine["properties"]!["networkAdapters"]!
-                .SelectMany(x => x["ipAddressList"]!.Values<string>().Select(ip => ip!)).ToList()
-        };
-        return machineObj;
-    }
 
     private async Task ExtractWebAppsAndSqlDatabases(JObject masterSiteInfo, string projectName)
     {
@@ -271,41 +224,16 @@ internal class DataExtractor : IHostedService
                 await foreach (var sqlServer in FetchWithNextLink(
                                    $"{Root}{nestedSites.Value<string>()}/sqlServers?{ApiVersion}"))
                 {
-                    sqlServers[sqlServer.Value<string>("id")!] = new SqlServer()
-                    {
-                        Edition = sqlServer["properties"]!.Value<string>("edition")!,
-                        Version = sqlServer["properties"]!.Value<string>("version")!,
-                        HostName = sqlServer["properties"]!.Value<string>("hostName")!,
-                        IsHighAvailabilityEnabled =
-                            sqlServer["properties"]!.Value<bool>("isHighAvailabilityEnabled"),
-                        LogicalCpuCount = sqlServer["properties"]!.Value<int>("logicalCpuCount"),
-                        MachineId = sqlServer["properties"]!["machineOverviewList"]!.FirstOrDefault()
-                            ?.Value<string>("extendedMachineId") ?? "NA",
-                        SqlServerName = sqlServer["properties"]!.Value<string>("sqlServerName")!,
-                    };
+                    sqlServers[sqlServer.Value<string>("id")!] = SqlServer.FromJToken(sqlServer);
                 }
 
                 await foreach (var database in FetchWithNextLink(
                                    $"{Root}{nestedSites.Value<string>()}/sqlDatabases?{ApiVersion}"))
                 {
                     _logger.LogInformation($"Processing Sql Database {projectName}");
-
                     var sqlServer = sqlServers[database["properties"]!.Value<string>("sqlServerArmId")!];
-                    machineDatabaseWriter.WriteRecord(new MachineDatabaseInventory()
-                    {
-                        DatabaseName = database["properties"]!.Value<string>("databaseName")!,
-                        MachineId = sqlServer.MachineId,
-                        Edition = sqlServer.Edition,
-                        Version = sqlServer.Version,
-                        DisplayName = "",
-                        HostName = sqlServer.HostName,
-                        LogicalCpuCount = sqlServer.LogicalCpuCount,
-                        SqlServerName = sqlServer.SqlServerName,
-                        IsServerHighAvailabilityEnabled = sqlServer.IsHighAvailabilityEnabled,
-                        SizeInMb = database["properties"]!.Value<int>("sizeMB"),
-                        IsDatabaseHighlyAvailable =
-                            database["properties"]!.Value<bool>("isDatabaseHighlyAvailable"),
-                    });
+                    machineDatabaseWriter.WriteRecord(
+                        MachineDatabaseInventory.FromServerAndDatabase(sqlServer, database));
                 }
             }
             else if (nestedSite.Value<string>("type") == "Microsoft.OffAzure/MasterSites/WebAppSites")
@@ -315,18 +243,7 @@ internal class DataExtractor : IHostedService
                 await foreach (var webApplication in FetchWithNextLink(
                                    $"{Root}{nestedSites.Value<string>()}/WebApplications?{ApiVersion}"))
                 {
-                    machineWebsiteWriter.WriteRecord(new MachineWebSiteInventory()
-                    {
-                        MachineId = webApplication["properties"]!["machineArmIds"]?.FirstOrDefault()
-                            ?.Value<string>() ?? "NA",
-                        DisplayName = webApplication["properties"]!.Value<string>("displayName")!,
-                        FrameworkName = webApplication["properties"]!["frameworks"]?.FirstOrDefault()
-                            ?.Value<string>("name") ?? "NA",
-                        FrameworkVersion = webApplication["properties"]!["frameworks"]?.FirstOrDefault()
-                            ?.Value<string>("version") ?? "NA",
-                        WebServerType = webApplication["properties"]!.Value<string>("serverType")!,
-                        WebServerName = webApplication["properties"]!.Value<string>("webServerName")!,
-                    });
+                    machineWebsiteWriter.WriteRecord(MachineWebSiteInventory.FromJToken(webApplication));
                 }
             }
         }
