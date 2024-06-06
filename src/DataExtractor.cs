@@ -42,8 +42,8 @@ internal class DataExtractor : IHostedService
             TenantId = _options.TenantId
         });
 
-        _logger.LogInformation("Signing into Azure using Azure CLI");
-        var token = await credential.GetTokenAsync(new TokenRequestContext(["https://management.azure.com/"]),
+        _logger.LogInformation("Signing into Azure");
+        var token = await credential.GetTokenAsync(new TokenRequestContext(["https://management.azure.com/user_impersonation"]),
             cancellationToken);
         _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
 
