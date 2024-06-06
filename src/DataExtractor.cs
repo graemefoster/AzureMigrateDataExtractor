@@ -84,6 +84,7 @@ internal class DataExtractor : IHostedService
                         $"{DateTime.Now:yyyy-MM-dd}-{projectName}-machine-software.csv")),
                 CultureInfo.InvariantCulture);
         machineSoftwareWriter.WriteHeader<MachineSoftwareInventory>();
+        await machineSoftwareWriter.NextRecordAsync();
 
         await using var dependenciesWriter =
             new CsvWriter(
@@ -92,6 +93,7 @@ internal class DataExtractor : IHostedService
                         $"{DateTime.Now:yyyy-MM-dd}-{projectName}-machine-dependencies.csv")),
                 CultureInfo.InvariantCulture);
         dependenciesWriter.WriteHeader<DependencyOverTime>();
+        await dependenciesWriter.NextRecordAsync();
 
         foreach (var appliance in masterSiteInfo["properties"]!["sites"]!)
         {
@@ -201,7 +203,9 @@ internal class DataExtractor : IHostedService
                 File.CreateText(Path.Combine(_options.OutputPath,
                     $"{DateTime.Now:yyyy-MM-dd}-{projectName}-{projectName}-machines-websites.csv")),
                 CultureInfo.InvariantCulture);
+        
         machineWebsiteWriter.WriteHeader<MachineWebSiteInventory>();
+        await machineWebsiteWriter.NextRecordAsync();
 
         await using var machineDatabaseWriter =
             new CsvWriter(
@@ -209,7 +213,7 @@ internal class DataExtractor : IHostedService
                     $"{DateTime.Now:yyyy-MM-dd}-{projectName}-{projectName}-machines-databases.csv")),
                 CultureInfo.InvariantCulture);
         machineDatabaseWriter.WriteHeader<MachineDatabaseInventory>();
-
+        await machineDatabaseWriter.NextRecordAsync();
 
         foreach (var nestedSites in masterSiteInfo["properties"]!["nestedSites"]!)
         {
