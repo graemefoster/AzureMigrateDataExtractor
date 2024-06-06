@@ -1,5 +1,8 @@
 # Azure Migrate Data Extractor
 
+## Purpose
+A tool to extract data in CSV format from an Azure Migrate project. This tool does not send the data anywhere. It collects it in CSV files on the machine you run it from.
+
 ## Downloading
 
 Either build from source or download the latest executable from the [releases](https://github.com/graemefoster/AzureMigrateDataExtractor/releases). 
