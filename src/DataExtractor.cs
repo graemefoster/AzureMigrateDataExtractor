@@ -37,7 +37,7 @@ internal class DataExtractor : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var credential = new AzureCliCredential(new AzureCliCredentialOptions
+        var credential = new InteractiveBrowserCredential(new InteractiveBrowserCredentialOptions
         {
             TenantId = _options.TenantId
         });
