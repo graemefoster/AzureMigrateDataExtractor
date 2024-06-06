@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+﻿using CsvHelper.Configuration.Attributes;
 using Newtonsoft.Json.Linq;
 
 namespace AzureMigrateDataExtractor;
@@ -23,6 +23,23 @@ internal class Machine
             PowerStatus = machine["properties"]!.Value<string>("powerStatus")!,
             IpAddresses = machine["properties"]!["networkAdapters"]!
                 .SelectMany(x => x["ipAddressList"]!.Values<string>().Select(ip => ip!)).ToList()
+        };
+    }
+}
+
+internal class MachineExport
+{
+    [Index(0)]public required string Name { get; set; }
+    [Index(1)]public required string DisplayName { get; init; }
+    [Index(2)]public required string IpAddresses { get; init; }
+
+    public static MachineExport FromMachine(Machine machine)
+    {
+        return new MachineExport()
+        {
+            Name = machine.Name,
+            DisplayName = machine.DisplayName,
+            IpAddresses = string.Join(',', machine.IpAddresses)
         };
     }
 }

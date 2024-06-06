@@ -77,6 +77,15 @@ internal class DataExtractor : IHostedService
 
     private async Task<Dictionary<string, Machine>> ExtractMachinesAndDependencies(JObject masterSiteInfo, string projectName)
     {
+        await using var machineWriter =
+            new CsvWriter(
+                File.CreateText(
+                    Path.Combine(_options.OutputPath,
+                        $"{DateTime.Now:yyyy-MM-dd}-{projectName}-machines.csv")),
+                CultureInfo.InvariantCulture);
+        machineWriter.WriteHeader<MachineExport>();
+        await machineWriter.NextRecordAsync();
+
         await using var machineSoftwareWriter =
             new CsvWriter(
                 File.CreateText(
@@ -107,6 +116,7 @@ internal class DataExtractor : IHostedService
                 _logger.LogInformation($"Processing Machine {machine["properties"]!.Value<string>("displayName")}");
 
                 var machineObj = Machine.FromJToken(machine);
+
                 machines.Add(machineObj.Id.ToLowerInvariant(), machineObj);
 
                 var apps = await FetchApplicationsAndFeaturesForMachine(machine);
@@ -156,6 +166,9 @@ internal class DataExtractor : IHostedService
             }
         }
 
+        await machineWriter.WriteRecordsAsync(machines.Values.Select(MachineExport.FromMachine));
+        await machineWriter.FlushAsync();
+        
         return machines;
     }
 
