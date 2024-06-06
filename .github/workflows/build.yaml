@@ -36,7 +36,7 @@ jobs:
           useConfigFile: true
           
       - name: Publish executable
-        run: dotnet publish src/AzureMigrateDataExtractor.csproj -p:Version=${{ steps.gitversion.outputs.NuGetVersionV2 }} --output ./release/ 
+        run: dotnet publish src/AzureMigrateDataExtractor.csproj -p:Version=${{ steps.gitversion.outputs.NuGetVersionV2 }} --output ./release/ -r win-x64
 
       - uses: actions/upload-artifact@v3
         with:
