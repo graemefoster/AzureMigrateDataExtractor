@@ -6,6 +6,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SolutionFolder", "SolutionF
 	ProjectSection(SolutionItems) = preProject
 		..\.github\workflows\build.yaml = ..\.github\workflows\build.yaml
 		..\GitVersion.yml = ..\GitVersion.yml
+		..\readme.md = ..\readme.md
 	EndProjectSection
 EndProject
 Global
