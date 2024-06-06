@@ -35,6 +35,13 @@ jobs:
         with:
           useConfigFile: true
           
+      - name: Pack Nuget
+        run: dotnet pack src/AzureMigrateDataExtractor.csproj -p:Version=${{ steps.gitversion.outputs.NuGetVersionV2 }} --output ./publish/
+
+
+      - name: Publish to Nuget ${{ steps.gitversion.outputs.NuGetVersionV2 }}
+        run: dotnet nuget push ./publish/AzureMigrateDataExtractor.${{ steps.gitversion.outputs.NuGetVersionV2 }}.nupkg  --api-key ${{ secrets.NUGET_PUBLISH_KEY }} --source https://api.nuget.org/v3/index.json
+
       - name: Publish executable
         run: dotnet publish src/AzureMigrateDataExtractor.csproj -p:Version=${{ steps.gitversion.outputs.NuGetVersionV2 }} --output ./release/ -r win-x64
 
