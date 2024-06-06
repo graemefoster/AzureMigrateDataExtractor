@@ -1,4 +1,6 @@
-﻿namespace AzureMigrateDataExtractor;
+﻿using System.Collections.Generic;
+
+namespace AzureMigrateDataExtractor;
 
 internal class Machine
 {
