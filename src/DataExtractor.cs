@@ -246,7 +246,7 @@ internal class DataExtractor : IHostedService
                     new
                     {
                         endTime = DateTimeOffset.UtcNow,
-                        startTime = DateTimeOffset.UtcNow.AddDays(-15)
+                        startTime = DateTimeOffset.UtcNow.AddDays(-7)
                     });
 
                 var statusUri = dependenciesResponse.Headers.GetValues("Azure-AsyncOperation").First();
