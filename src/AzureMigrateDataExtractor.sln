@@ -5,6 +5,7 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SolutionFolder", "SolutionFolder", "{7A80DF3C-2183-4B08-9DEA-372EAF86C049}"
 	ProjectSection(SolutionItems) = preProject
 		..\.github\workflows\build.yaml = ..\.github\workflows\build.yaml
+		..\GitVersion.yml = ..\GitVersion.yml
 	EndProjectSection
 EndProject
 Global
