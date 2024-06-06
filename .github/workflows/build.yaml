@@ -43,7 +43,7 @@ jobs:
         run: dotnet nuget push ./publish/AzureMigrateDataExtractor.${{ steps.gitversion.outputs.NuGetVersionV2 }}.nupkg  --api-key ${{ secrets.NUGET_PUBLISH_KEY }} --source https://api.nuget.org/v3/index.json
 
       - name: Publish executable
-        run: dotnet publish src/AzureMigrateDataExtractor.csproj -p:Version=${{ steps.gitversion.outputs.NuGetVersionV2 }} --output ./release/ -r win-x64
+        run: dotnet publish src/AzureMigrateDataExtractor.csproj -p:PublishSingleFile=true -p:Version=${{ steps.gitversion.outputs.NuGetVersionV2 }} --output ./release/ -r win-x64
 
       - uses: actions/upload-artifact@v3
         with:
