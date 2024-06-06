@@ -62,8 +62,8 @@ internal class DataExtractor : IHostedService
             var masterSiteInfo = await FetchMasterSite(project);
             var projectName = project.Value<string>("name")!;
             _logger.LogInformation($"Processing Project {projectName}");
-            await ExtractWebAppsAndSqlDatabases(masterSiteInfo, projectName);
-            await ExtractMachinesAndDependencies(masterSiteInfo, projectName);
+            var machines = await ExtractMachinesAndDependencies(masterSiteInfo, projectName);
+            await ExtractWebAppsAndSqlDatabases(machines, masterSiteInfo, projectName);
         }
 
         _logger.LogInformation($"Finished extracting data. Output files are in {_options.OutputPath}");
@@ -75,7 +75,7 @@ internal class DataExtractor : IHostedService
             $"{Root}{project["properties"]!["details"]!["extendedDetails"]!.Value<string>("masterSiteId")}?{ApiVersion}");
     }
 
-    private async Task ExtractMachinesAndDependencies(JObject masterSiteInfo, string projectName)
+    private async Task<Dictionary<string, Machine>> ExtractMachinesAndDependencies(JObject masterSiteInfo, string projectName)
     {
         await using var machineSoftwareWriter =
             new CsvWriter(
@@ -95,6 +95,8 @@ internal class DataExtractor : IHostedService
         dependenciesWriter.WriteHeader<DependencyOverTime>();
         await dependenciesWriter.NextRecordAsync();
 
+        var machines = new Dictionary<string, Machine>();
+
         foreach (var appliance in masterSiteInfo["properties"]!["sites"]!)
         {
             var applianceName = appliance.Value<string>();
@@ -105,6 +107,7 @@ internal class DataExtractor : IHostedService
                 _logger.LogInformation($"Processing Machine {machine["properties"]!.Value<string>("displayName")}");
 
                 var machineObj = Machine.FromJToken(machine);
+                machines.Add(machineObj.Id.ToLowerInvariant(), machineObj);
 
                 var apps = await FetchApplicationsAndFeaturesForMachine(machine);
                 foreach (var app in apps["properties"]!["appsAndRoles"]!["applications"]!)
@@ -152,6 +155,8 @@ internal class DataExtractor : IHostedService
                 await dependenciesWriter.FlushAsync();
             }
         }
+
+        return machines;
     }
 
     private async Task<(string status, JObject dependencies)> FetchDependencyData(string? applianceName)
@@ -196,7 +201,7 @@ internal class DataExtractor : IHostedService
     }
 
 
-    private async Task ExtractWebAppsAndSqlDatabases(JObject masterSiteInfo, string projectName)
+    private async Task ExtractWebAppsAndSqlDatabases(Dictionary<string, Machine> machines, JObject masterSiteInfo, string projectName)
     {
         await using var machineWebsiteWriter =
             new CsvWriter(
@@ -236,8 +241,7 @@ internal class DataExtractor : IHostedService
                 {
                     _logger.LogInformation($"Processing Sql Database {projectName}");
                     var sqlServer = sqlServers[database["properties"]!.Value<string>("sqlServerArmId")!];
-                    machineDatabaseWriter.WriteRecord(
-                        MachineDatabaseInventory.FromServerAndDatabase(sqlServer, database));
+                    machineDatabaseWriter.WriteRecord(MachineDatabaseInventory.FromServerAndDatabase(sqlServer, database));
                 }
             }
             else if (nestedSite.Value<string>("type") == "Microsoft.OffAzure/MasterSites/WebAppSites")
@@ -247,7 +251,13 @@ internal class DataExtractor : IHostedService
                 await foreach (var webApplication in FetchWithNextLink(
                                    $"{Root}{nestedSites.Value<string>()}/WebApplications?{ApiVersion}"))
                 {
-                    machineWebsiteWriter.WriteRecord(MachineWebSiteInventory.FromJToken(webApplication));
+                    var machineId = machines.TryGetValue(
+                        webApplication["properties"]!["machineArmIds"]?.FirstOrDefault()?.Value<string>() ?? string.Empty,
+                        out var machine)
+                        ? machine.Name
+                        : "unknown";
+
+                    machineWebsiteWriter.WriteRecord(MachineWebSiteInventory.FromJToken(machineId, webApplication));
                 }
             }
         }

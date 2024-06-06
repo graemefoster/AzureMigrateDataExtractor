@@ -12,12 +12,11 @@ internal class MachineWebSiteInventory
     [Index(4)] public required string FrameworkName { get; init; }
     [Index(5)] public required string FrameworkVersion { get; init; }
 
-    public static MachineWebSiteInventory FromJToken(JToken webApplication)
+    public static MachineWebSiteInventory FromJToken(string machineId, JToken webApplication)
     {
         return new MachineWebSiteInventory()
         {
-            MachineId = webApplication["properties"]!["machineArmIds"]?.FirstOrDefault()
-                ?.Value<string>() ?? "NA",
+            MachineId = machineId,
             DisplayName = webApplication["properties"]!.Value<string>("displayName")!,
             FrameworkName = webApplication["properties"]!["frameworks"]?.FirstOrDefault()
                 ?.Value<string>("name") ?? "NA",

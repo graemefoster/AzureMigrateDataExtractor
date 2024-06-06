@@ -13,4 +13,6 @@ internal class DependencyOverTime
     [Index(6)][Name("Destination application")] public required string? DestinationApplication { get; init; }
     [Index(7)][Name("Destination process")] public required string? DestinationProcess { get; init; }
     [Index(8)][Name("Destination port")] public required int? DestinationPort { get; init; }
+    [Index(9)][Name("Source Server Id")] public required int? SourceServerId { get; init; }
+    [Index(10)][Name("Destination Server Id")] public required int? DestinationServerId { get; init; }
 }
