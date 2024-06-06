@@ -18,11 +18,11 @@ public static class Program
     public static Task Main(string[] args)
 #pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
     {
-        var tenantIdOption = new Option<string>(name: "--tenant-id");
-        var subscriptionIdOption = new Option<string>(name: "--subscription-id");
-        var resourceGroupNameOption = new Option<string>(name: "--resource-group-name");
-        var azureMigrateProjectNameOption = new Option<string>(name: "--azure-migrate-project-name");
-        var outputPathOption = new Option<string>(name: "--output-path");
+        var tenantIdOption = new Option<string>(name: "--tenant-id") { IsRequired = true};
+        var subscriptionIdOption = new Option<string>(name: "--subscription-id") { IsRequired = true};
+        var resourceGroupNameOption = new Option<string>(name: "--resource-group-name") { IsRequired = true};
+        var azureMigrateProjectNameOption = new Option<string>(name: "--azure-migrate-project-name") { IsRequired = true};
+        var outputPathOption = new Option<string>(name: "--output-path") { IsRequired = true};
 
         Console.WriteLine("Azure Migrate data extractor");
         
