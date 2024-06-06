@@ -1,5 +1,11 @@
 # Azure Migrate Data Extractor
 
+## Downloading
+
+Either build from source or download the latest executable from the [releases](https://github.com/graemefoster/AzureMigrateDataExtractor/releases). 
+
+> Releases are currently built for Windows x64 only. Prerequisite of dotnet 8 runtime is required for the exe to run.
+
 ## Running
 
 ```shell
