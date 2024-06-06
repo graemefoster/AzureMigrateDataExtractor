@@ -72,233 +72,264 @@ internal class DataExtractor : IHostedService
 
             _logger.LogInformation($"Processing Project {projectName}");
 
+            await ExtractWebAppsAndSqlDatabases(masterSiteInfo, projectName);
 
-            await using var machineWebsiteWriter =
-                new CsvWriter(
-                    File.CreateText(Path.Combine(_options.OutputPath,
-                        $"{DateTime.Now:yyyy-MM-dd}-{migrateProjectName}-{projectName}-machines-websites.csv")),
-                    CultureInfo.InvariantCulture);
-            machineWebsiteWriter.WriteHeader<MachineWebSiteInventory>();
+            await ExtractMachinesAndDependencies(masterSiteInfo, projectName);
+        }
+        _logger.LogInformation($"Finished extracting data. Output files are in {_options.OutputPath}");
+    }
 
-            await using var machineDatabaseWriter =
-                new CsvWriter(
-                    File.CreateText(Path.Combine(_options.OutputPath,
-                        $"{DateTime.Now:yyyy-MM-dd}-{migrateProjectName}-{projectName}-machines-databases.csv")),
-                    CultureInfo.InvariantCulture);
-            machineDatabaseWriter.WriteHeader<MachineDatabaseInventory>();
+    private async Task ExtractMachinesAndDependencies(JObject masterSiteInfo, string projectName)
+    {
+        await using var machineSoftwareWriter =
+            new CsvWriter(
+                File.CreateText(
+                    Path.Combine(_options.OutputPath,
+                        $"{DateTime.Now:yyyy-MM-dd}-{projectName}-machine-software.csv")),
+                CultureInfo.InvariantCulture);
+        machineSoftwareWriter.WriteHeader<MachineSoftwareInventory>();
 
-            await using var machineSoftwareWriter =
-                new CsvWriter(
-                    File.CreateText(
-                        Path.Combine(_options.OutputPath,
-                            $"{DateTime.Now:yyyy-MM-dd}-{migrateProjectName}-{projectName}-machine-software.csv")),
-                    CultureInfo.InvariantCulture);
-            machineSoftwareWriter.WriteHeader<MachineSoftwareInventory>();
+        await using var dependenciesWriter =
+            new CsvWriter(
+                File.CreateText(
+                    Path.Combine(_options.OutputPath,
+                        $"{DateTime.Now:yyyy-MM-dd}-{projectName}-machine-dependencies.csv")),
+                CultureInfo.InvariantCulture);
+        dependenciesWriter.WriteHeader<DependencyOverTime>();
+       
+        foreach (var appliance in masterSiteInfo["properties"]!["sites"]!)
+        {
+            var applianceName = appliance.Value<string>();
 
-            await using var dependenciesWriter =
-                new CsvWriter(
-                    File.CreateText(
-                        Path.Combine(_options.OutputPath,
-                            $"{DateTime.Now:yyyy-MM-dd}-{migrateProjectName}-{projectName}-machine-dependencies.csv")),
-                    CultureInfo.InvariantCulture);
-            dependenciesWriter.WriteHeader<DependencyOverTime>();
-
-            foreach (var nestedSites in masterSiteInfo["properties"]!["nestedSites"]!)
+            await foreach (var machine in FetchWithNextLink(
+                               $"{Root}{applianceName}/machines?{ApiVersion}"))
             {
-                var nestedSite =
-                    await _httpClient.GetJsonAsync<JObject>($"{Root}{nestedSites.Value<string>()}?{ApiVersion}");
+                _logger.LogInformation($"Processing Machine {machine["properties"]!.Value<string>("displayName")}");
 
-                if (nestedSite.Value<string>("type") == "Microsoft.OffAzure/MasterSites/SqlSites")
+                var machineObj = BuildMachineObject(machine);
+
+                var apps = await FetchApplicationsAndFeaturesForMachine(machine);
+                foreach (var app in apps["properties"]!["appsAndRoles"]!["applications"]!)
                 {
-                    _logger.LogInformation($"Processing Sql Site {projectName}");
-
-                    var sqlServers = new Dictionary<string, SqlServer>();
-                    await foreach (var sqlServer in FetchWithNextLink(
-                                       $"{Root}{nestedSites.Value<string>()}/sqlServers?{ApiVersion}"))
-                    {
-                        sqlServers[sqlServer.Value<string>("id")!] = new SqlServer()
-                        {
-                            Edition = sqlServer["properties"]!.Value<string>("edition")!,
-                            Version = sqlServer["properties"]!.Value<string>("version")!,
-                            HostName = sqlServer["properties"]!.Value<string>("hostName")!,
-                            IsHighAvailabilityEnabled =
-                                sqlServer["properties"]!.Value<bool>("isHighAvailabilityEnabled"),
-                            LogicalCpuCount = sqlServer["properties"]!.Value<int>("logicalCpuCount"),
-                            MachineId = sqlServer["properties"]!["machineOverviewList"]!.FirstOrDefault()
-                                ?.Value<string>("extendedMachineId") ?? "NA",
-                            SqlServerName = sqlServer["properties"]!.Value<string>("sqlServerName")!,
-                        };
-                    }
-
-                    await foreach (var database in FetchWithNextLink(
-                                       $"{Root}{nestedSites.Value<string>()}/sqlDatabases?{ApiVersion}"))
-                    {
-                        _logger.LogInformation($"Processing Sql Database {projectName}");
-
-                        var sqlServer = sqlServers[database["properties"]!.Value<string>("sqlServerArmId")!];
-                        machineDatabaseWriter.WriteRecord(new MachineDatabaseInventory()
-                        {
-                            DatabaseName = database["properties"]!.Value<string>("databaseName")!,
-                            MachineId = sqlServer.MachineId,
-                            Edition = sqlServer.Edition,
-                            Version = sqlServer.Version,
-                            DisplayName = "",
-                            HostName = sqlServer.HostName,
-                            LogicalCpuCount = sqlServer.LogicalCpuCount,
-                            SqlServerName = sqlServer.SqlServerName,
-                            IsServerHighAvailabilityEnabled = sqlServer.IsHighAvailabilityEnabled,
-                            SizeInMb = database["properties"]!.Value<int>("sizeMB"),
-                            IsDatabaseHighlyAvailable =
-                                database["properties"]!.Value<bool>("isDatabaseHighlyAvailable"),
-                        });
-                    }
+                    BuildApplicationObject(machineObj, app);
                 }
-                else if (nestedSite.Value<string>("type") == "Microsoft.OffAzure/MasterSites/WebAppSites")
-                {
-                    _logger.LogInformation($"Processing Web App Sites {projectName}");
 
-                    await foreach (var webApplication in FetchWithNextLink(
-                                       $"{Root}{nestedSites.Value<string>()}/WebApplications?{ApiVersion}"))
-                    {
-                        machineWebsiteWriter.WriteRecord(new MachineWebSiteInventory()
-                        {
-                            MachineId = webApplication["properties"]!["machineArmIds"]?.FirstOrDefault()
-                                ?.Value<string>() ?? "NA",
-                            DisplayName = webApplication["properties"]!.Value<string>("displayName")!,
-                            FrameworkName = webApplication["properties"]!["frameworks"]?.FirstOrDefault()
-                                ?.Value<string>("name") ?? "NA",
-                            FrameworkVersion = webApplication["properties"]!["frameworks"]?.FirstOrDefault()
-                                ?.Value<string>("version") ?? "NA",
-                            WebServerType = webApplication["properties"]!.Value<string>("serverType")!,
-                            WebServerName = webApplication["properties"]!.Value<string>("webServerName")!,
-                        });
-                    }
+                foreach (var app in apps["properties"]!["appsAndRoles"]!["features"]!)
+                {
+                    machineObj.Features.Add(app.Value<string>("name")!);
                 }
-            }
 
-
-            foreach (var appliance in masterSiteInfo["properties"]!["sites"]!)
-            {
-                var applianceName = appliance.Value<string>();
-
-                await foreach (var machine in FetchWithNextLink(
-                                   $"{Root}{applianceName}/machines?{ApiVersion}"))
-                {
-                    _logger.LogInformation($"Processing Machine {machine["properties"]!.Value<string>("displayName")}");
-
-                    var machineObj = new Machine()
-                    {
-                        Id = machine.Value<string>("id")!,
-                        Name = machine.Value<string>("name")!,
-                        DisplayName = machine["properties"]!.Value<string>("displayName")!,
-                        PowerStatus = machine["properties"]!.Value<string>("powerStatus")!,
-                        IpAddresses = machine["properties"]!["networkAdapters"]!
-                            .SelectMany(x => x["ipAddressList"]!.Values<string>().Select(ip => ip!)).ToList()
-                    };
-
-                    var apps = await _httpClient.GetJsonAsync<JObject>(
-                        $"{Root}{machine.Value<string>("id")}/applications?{ApiVersion}");
-                    foreach (var app in apps["properties"]!["appsAndRoles"]!["applications"]!)
-                    {
-                        machineObj.Applications.Add(new Application()
+                await machineSoftwareWriter.WriteRecordsAsync(
+                    machineObj.Applications.Select(x =>
+                        new MachineSoftwareInventory()
                         {
-                            Name = app.Value<string>("name")!,
-                            Provider = app.Value<string>("provider")!,
-                            Version = app.Value<string>("version")!
-                        });
-                    }
-
-                    foreach (var app in apps["properties"]!["appsAndRoles"]!["features"]!)
-                    {
-                        machineObj.Features.Add(app.Value<string>("name")!);
-                    }
-
-                    await machineSoftwareWriter.WriteRecordsAsync(
-                        machineObj.Applications.Select(x =>
+                            ApplicationName = x.Name,
+                            ApplicationProvider = x.Provider,
+                            ApplicationVersion = x.Version,
+                            DisplayName = machineObj.DisplayName,
+                            MachineId = machineObj.Name,
+                            PowerStatus = machineObj.PowerStatus,
+                            FeatureName = null
+                        }).Concat(
+                        machineObj.Features.Select(x =>
                             new MachineSoftwareInventory()
                             {
-                                ApplicationName = x.Name,
-                                ApplicationProvider = x.Provider,
-                                ApplicationVersion = x.Version,
+                                ApplicationName = null,
+                                ApplicationProvider = null,
+                                ApplicationVersion = null,
                                 DisplayName = machineObj.DisplayName,
                                 MachineId = machineObj.Name,
                                 PowerStatus = machineObj.PowerStatus,
-                                FeatureName = null
-                            }).Concat(
-                            machineObj.Features.Select(x =>
-                                new MachineSoftwareInventory()
-                                {
-                                    ApplicationName = null,
-                                    ApplicationProvider = null,
-                                    ApplicationVersion = null,
-                                    DisplayName = machineObj.DisplayName,
-                                    MachineId = machineObj.Name,
-                                    PowerStatus = machineObj.PowerStatus,
-                                    FeatureName = x
-                                })));
+                                FeatureName = x
+                            })));
+            }
+
+            _logger.LogInformation($"Fetching Dependencies");
+            var (status, dependencies) = await FetchDependencyData(applianceName);
+
+            if (status == "Succeeded")
+            {
+                _logger.LogInformation("Downloading Dependencies extract");
+
+                var resultJson =
+                    JsonConvert.DeserializeObject<JObject>(dependencies["properties"]!.Value<string>("result")!)!;
+
+                using var dependenciesCsvReader =
+                    new CsvReader(
+                        new StreamReader(
+                            await new HttpClient().GetStreamAsync(resultJson.Value<string>("SASUri")!)),
+                        CultureInfo.InvariantCulture);
+
+                var grouped = new HashSet<DependencyOverTime>();
+                await foreach (var record in dependenciesCsvReader.GetRecordsAsync<Dependency>())
+                {
+                    if (record.SourceProcess == "System Idle Process") continue;
+
+                    var dependency = new DependencyOverTime()
+                    {
+                        SourceServerName = record.SourceServerName,
+                        SourceIp = record.SourceIp,
+                        SourceApplication = record.SourceApplication,
+                        SourceProcess = record.SourceProcess,
+                        DestinationServerName = record.DestinationServerName,
+                        DestinationIp = record.DestinationIp,
+                        DestinationApplication = record.DestinationApplication,
+                        DestinationProcess = record.DestinationProcess,
+                        DestinationPort = record.DestinationPort
+                    };
+                    grouped.Add(dependency);
                 }
 
-                //get the dependency export
-                _logger.LogInformation($"Fetching Dependencies");
+                await dependenciesWriter.WriteRecordsAsync(grouped);
+                await dependenciesWriter.FlushAsync();
+            }
+        }
+    }
 
-                var dependenciesResponse = await _httpClient.PostJsonAsync(
-                    $"{Root}{applianceName}/exportDependencies?{ApiVersion}",
-                    new
+    private async Task<(string status, JObject dependencies)> FetchDependencyData(string? applianceName)
+    {
+        var dependenciesResponse = await _httpClient.PostJsonAsync(
+            $"{Root}{applianceName}/exportDependencies?{ApiVersion}",
+            new
+            {
+                endTime = DateTimeOffset.UtcNow,
+                startTime = DateTimeOffset.UtcNow.AddDays(-7)
+            });
+
+        var statusUri = dependenciesResponse.Headers.GetValues("Azure-AsyncOperation").First();
+
+        string? status;
+        JObject? dependencies;
+        do
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            dependencies = await _httpClient.GetJsonAsync<JObject>($"{statusUri}");
+            status = dependencies.Value<string>("status")!;
+            _logger.LogInformation("Waiting for Dependencies extract");
+        } while (status == "Running");
+
+        return (status, dependencies);
+    }
+
+    private static void BuildApplicationObject(Machine machineObj, JToken app)
+    {
+        machineObj.Applications.Add(new Application()
+        {
+            Name = app.Value<string>("name")!,
+            Provider = app.Value<string>("provider")!,
+            Version = app.Value<string>("version")!
+        });
+    }
+
+    private async Task<JObject> FetchApplicationsAndFeaturesForMachine(JToken machine)
+    {
+        return await _httpClient.GetJsonAsync<JObject>(
+            $"{Root}{machine.Value<string>("id")}/applications?{ApiVersion}");
+    }
+
+    private static Machine BuildMachineObject(JToken machine)
+    {
+        var machineObj = new Machine()
+        {
+            Id = machine.Value<string>("id")!,
+            Name = machine.Value<string>("name")!,
+            DisplayName = machine["properties"]!.Value<string>("displayName")!,
+            PowerStatus = machine["properties"]!.Value<string>("powerStatus")!,
+            IpAddresses = machine["properties"]!["networkAdapters"]!
+                .SelectMany(x => x["ipAddressList"]!.Values<string>().Select(ip => ip!)).ToList()
+        };
+        return machineObj;
+    }
+
+    private async Task ExtractWebAppsAndSqlDatabases(JObject masterSiteInfo, string projectName)
+    {
+        await using var machineWebsiteWriter =
+            new CsvWriter(
+                File.CreateText(Path.Combine(_options.OutputPath,
+                    $"{DateTime.Now:yyyy-MM-dd}-{projectName}-{projectName}-machines-websites.csv")),
+                CultureInfo.InvariantCulture);
+        machineWebsiteWriter.WriteHeader<MachineWebSiteInventory>();
+
+        await using var machineDatabaseWriter =
+            new CsvWriter(
+                File.CreateText(Path.Combine(_options.OutputPath,
+                    $"{DateTime.Now:yyyy-MM-dd}-{projectName}-{projectName}-machines-databases.csv")),
+                CultureInfo.InvariantCulture);
+        machineDatabaseWriter.WriteHeader<MachineDatabaseInventory>();
+
+
+        foreach (var nestedSites in masterSiteInfo["properties"]!["nestedSites"]!)
+        {
+            var nestedSite =
+                await _httpClient.GetJsonAsync<JObject>($"{Root}{nestedSites.Value<string>()}?{ApiVersion}");
+
+            if (nestedSite.Value<string>("type") == "Microsoft.OffAzure/MasterSites/SqlSites")
+            {
+                _logger.LogInformation($"Processing Sql Site {projectName}");
+
+                var sqlServers = new Dictionary<string, SqlServer>();
+                await foreach (var sqlServer in FetchWithNextLink(
+                                   $"{Root}{nestedSites.Value<string>()}/sqlServers?{ApiVersion}"))
+                {
+                    sqlServers[sqlServer.Value<string>("id")!] = new SqlServer()
                     {
-                        endTime = DateTimeOffset.UtcNow,
-                        startTime = DateTimeOffset.UtcNow.AddDays(-7)
+                        Edition = sqlServer["properties"]!.Value<string>("edition")!,
+                        Version = sqlServer["properties"]!.Value<string>("version")!,
+                        HostName = sqlServer["properties"]!.Value<string>("hostName")!,
+                        IsHighAvailabilityEnabled =
+                            sqlServer["properties"]!.Value<bool>("isHighAvailabilityEnabled"),
+                        LogicalCpuCount = sqlServer["properties"]!.Value<int>("logicalCpuCount"),
+                        MachineId = sqlServer["properties"]!["machineOverviewList"]!.FirstOrDefault()
+                            ?.Value<string>("extendedMachineId") ?? "NA",
+                        SqlServerName = sqlServer["properties"]!.Value<string>("sqlServerName")!,
+                    };
+                }
+
+                await foreach (var database in FetchWithNextLink(
+                                   $"{Root}{nestedSites.Value<string>()}/sqlDatabases?{ApiVersion}"))
+                {
+                    _logger.LogInformation($"Processing Sql Database {projectName}");
+
+                    var sqlServer = sqlServers[database["properties"]!.Value<string>("sqlServerArmId")!];
+                    machineDatabaseWriter.WriteRecord(new MachineDatabaseInventory()
+                    {
+                        DatabaseName = database["properties"]!.Value<string>("databaseName")!,
+                        MachineId = sqlServer.MachineId,
+                        Edition = sqlServer.Edition,
+                        Version = sqlServer.Version,
+                        DisplayName = "",
+                        HostName = sqlServer.HostName,
+                        LogicalCpuCount = sqlServer.LogicalCpuCount,
+                        SqlServerName = sqlServer.SqlServerName,
+                        IsServerHighAvailabilityEnabled = sqlServer.IsHighAvailabilityEnabled,
+                        SizeInMb = database["properties"]!.Value<int>("sizeMB"),
+                        IsDatabaseHighlyAvailable =
+                            database["properties"]!.Value<bool>("isDatabaseHighlyAvailable"),
                     });
+                }
+            }
+            else if (nestedSite.Value<string>("type") == "Microsoft.OffAzure/MasterSites/WebAppSites")
+            {
+                _logger.LogInformation($"Processing Web App Sites {projectName}");
 
-                var statusUri = dependenciesResponse.Headers.GetValues("Azure-AsyncOperation").First();
-
-                string? status;
-                JObject? dependencies;
-                do
+                await foreach (var webApplication in FetchWithNextLink(
+                                   $"{Root}{nestedSites.Value<string>()}/WebApplications?{ApiVersion}"))
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(5));
-                    dependencies = await _httpClient.GetJsonAsync<JObject>($"{statusUri}");
-                    status = dependencies.Value<string>("status")!;
-                    _logger.LogInformation("Waiting for Dependencies extract");
-                } while (status == "Running");
-
-                if (status == "Succeeded")
-                {
-                    _logger.LogInformation("Downloading Dependencies extract");
-
-                    var resultJson =
-                        JsonConvert.DeserializeObject<JObject>(dependencies["properties"]!.Value<string>("result")!)!;
-                    using var dependenciesCsvReader =
-                        new CsvReader(
-                            new StreamReader(
-                                await new HttpClient().GetStreamAsync(resultJson.Value<string>("SASUri")!)),
-                            CultureInfo.InvariantCulture);
-
-                    var grouped = new HashSet<DependencyOverTime>();
-                    await foreach (var record in dependenciesCsvReader.GetRecordsAsync<Dependency>())
+                    machineWebsiteWriter.WriteRecord(new MachineWebSiteInventory()
                     {
-                        if (record.SourceProcess == "System Idle Process") continue;
-
-                        var dependency = new DependencyOverTime()
-                        {
-                            SourceServerName = record.SourceServerName,
-                            SourceIp = record.SourceIp,
-                            SourceApplication = record.SourceApplication,
-                            SourceProcess = record.SourceProcess,
-                            DestinationServerName = record.DestinationServerName,
-                            DestinationIp = record.DestinationIp,
-                            DestinationApplication = record.DestinationApplication,
-                            DestinationProcess = record.DestinationProcess,
-                            DestinationPort = record.DestinationPort
-                        };
-                        grouped.Add(dependency);
-                    }
-
-                    await dependenciesWriter.WriteRecordsAsync(grouped);
-                    await dependenciesWriter.FlushAsync();
+                        MachineId = webApplication["properties"]!["machineArmIds"]?.FirstOrDefault()
+                            ?.Value<string>() ?? "NA",
+                        DisplayName = webApplication["properties"]!.Value<string>("displayName")!,
+                        FrameworkName = webApplication["properties"]!["frameworks"]?.FirstOrDefault()
+                            ?.Value<string>("name") ?? "NA",
+                        FrameworkVersion = webApplication["properties"]!["frameworks"]?.FirstOrDefault()
+                            ?.Value<string>("version") ?? "NA",
+                        WebServerType = webApplication["properties"]!.Value<string>("serverType")!,
+                        WebServerName = webApplication["properties"]!.Value<string>("webServerName")!,
+                    });
                 }
             }
         }
-        _logger.LogInformation($"Finished extracting data. Output files are in {_options.OutputPath}");
     }
 
     private async IAsyncEnumerable<JToken> FetchWithNextLink(string api)
