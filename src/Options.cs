@@ -7,4 +7,5 @@ internal class Options
     public required string SubscriptionId { get; set; }
     public required string ResourceGroupName { get; set; }
     public required string AzureMigrateProjectName { get; set; }
+    public required string ApplianceName { get; set; }
 }

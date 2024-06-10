@@ -14,7 +14,7 @@ Either build from source, use a ```dotnet global tool``` or download the latest 
 ```shell
 #Run as a dotnet global tool
 dotnet tool install -g AzureMigrateDataExtractor
-dotnet AzureMigrateDataExtractor --tenant-id "<tenant-id>" --subscription-id "<subscription-id>" --resource-group-name "<resource-group-name>" --azure-migrate-project-name "<project-name>" --output-path "<output-path>"
+dotnet AzureMigrateDataExtractor --tenant-id "<tenant-id>" --subscription-id "<subscription-id>" --resource-group-name "<resource-group-name>" --azure-migrate-project-name "<project-name>" --appliance-name "<appliance-name>" --output-path "<output-path>"
 cd <output-path>
 dir *.csv
 ```
@@ -24,21 +24,20 @@ dir *.csv
 
 Invoke-WebRequest -Uri 'https://github.com/graemefoster/AzureMigrateDataExtractor/releases/latest/download/AzureMigrateDataExtractor.exe' -OutFile 'c:\temp\AzureMigrateDataExtractor.exe'
 cd c:\temp\
-.\AzureMigrateDataExtractor.exe --tenant-id "<tenant-id>" --subscription-id "<subscription-id>" --resource-group-name "<resource-group-name>" --azure-migrate-project-name "<project-name>" --output-path "<output-path>"
+.\AzureMigrateDataExtractor.exe --tenant-id "<tenant-id>" --subscription-id "<subscription-id>" --resource-group-name "<resource-group-name>" --azure-migrate-project-name "<project-name>" --appliance-name "<appliance-name>" --output-path "<output-path>"
 cd <output-path>
 dir *.csv
 ```
 
 ## Output
 
-The tool will generate the following CSV files:
+The tool will generate the following files:
 
-| File             | Contents                                                  |
-|------------------|-----------------------------------------------------------|
-| dependencies.csv | Contains the dependencies between the discovered servers. |
-| databases.csv    | Contains discovered sql server / databases                |
-| software.csv     | Contains discovered applications and features             |
-| websites.csv     | Contains discovered websites                              |
+| File         | Format | Contents                                                  |
+|--------------|--------|-----------------------------------------------------------|
+| dependencies | csv    | Contains the dependencies between the discovered servers. |
+| databases    | csv    | Contains discovered sql server / databases                |
+| software     | xlsx   | Contains discovered applications and features             |
+| websites     | csv    | Contains discovered websites                              |
 
-
-
+~~~~
