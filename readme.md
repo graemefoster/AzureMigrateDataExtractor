@@ -40,4 +40,3 @@ The tool will generate the following files:
 | software     | xlsx   | Contains discovered applications and features             |
 | websites     | csv    | Contains discovered websites                              |
 
-~~~~
