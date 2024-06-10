@@ -20,7 +20,6 @@ public static class Program
         var subscriptionIdOption = new Option<string>(name: "--subscription-id") { IsRequired = true};
         var resourceGroupNameOption = new Option<string>(name: "--resource-group-name") { IsRequired = true};
         var azureMigrateProjectNameOption = new Option<string>(name: "--azure-migrate-project-name") { IsRequired = true};
-        var applianceNameOption = new Option<string>(name: "--appliance-name") { IsRequired = true};
         var outputPathOption = new Option<string>(name: "--output-path") { IsRequired = true};
 
         Console.WriteLine("Azure Migrate data extractor");
@@ -30,25 +29,22 @@ public static class Program
         rootCommand.AddOption(subscriptionIdOption);
         rootCommand.AddOption(resourceGroupNameOption);
         rootCommand.AddOption(azureMigrateProjectNameOption);
-        rootCommand.AddOption(applianceNameOption);
         rootCommand.AddOption(outputPathOption);
 
         rootCommand.SetHandler(
-            (tenantId, subscriptionId, resourceGroupName, azureMigrateProjectName, applianceName, outputPath) => RunExtractor(
+            (tenantId, subscriptionId, resourceGroupName, azureMigrateProjectName, outputPath) => RunExtractor(
                 new Options()
                 {
                     TenantId = tenantId,
                     SubscriptionId = subscriptionId,
                     ResourceGroupName = resourceGroupName,
                     OutputPath = outputPath,
-                    AzureMigrateProjectName = azureMigrateProjectName,
-                    ApplianceName = applianceName
+                    AzureMigrateProjectName = azureMigrateProjectName
                 }), 
             tenantIdOption, 
             subscriptionIdOption, 
             resourceGroupNameOption, 
             azureMigrateProjectNameOption,
-            applianceNameOption,
             outputPathOption);
 
         return rootCommand.InvokeAsync(args);
@@ -79,7 +75,6 @@ public static class Program
                     opt.SubscriptionId = options.SubscriptionId;
                     opt.ResourceGroupName = options.ResourceGroupName;
                     opt.AzureMigrateProjectName = options.AzureMigrateProjectName;
-                    opt.ApplianceName = options.ApplianceName;
                     opt.OutputPath = options.OutputPath;
                 });
             });
